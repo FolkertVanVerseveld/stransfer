@@ -18,7 +18,7 @@ See below for original author and license.
 #include <stdint.h>
 #include <endian.h>
 
-typedef struct {
+typedef struct serpent {
 	uint32_t l_key[140];
 } serpent_ctx;
 

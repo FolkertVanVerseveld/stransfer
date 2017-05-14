@@ -100,8 +100,18 @@ static int parse_opt(int argc, char **argv)
 
 static int handle(struct sock *s)
 {
+	int ret = 1;
+	if (cfg.mode & MODE_SERVER) {
+		if ((ret = authrecv(s)))
+			goto fail;
+	} else {
+		if ((ret = authsend(s)))
+			goto fail;
+	}
 	fputs("TODO handle\n", stderr);
-	return 1;
+	ret = 0;
+fail:
+	return ret;
 }
 
 int main(int argc, char **argv)
@@ -133,6 +143,7 @@ int main(int argc, char **argv)
 	if (argp != argc)
 		cfg.files = &argv[argp];
 	netinit();
+	authinit();
 	if (cfg.mode & MODE_SERVER)
 		nlog = BACKLOG;
 	if ((ret = sockinit(&s, cfg.port, nlog, cfg.address)))

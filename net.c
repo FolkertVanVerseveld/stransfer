@@ -8,12 +8,12 @@
 #include <netinet/tcp.h>
 #include <unistd.h>
 
-static const uint16_t nt_ltbl[NT_MAX + 1] = {
+const uint16_t nt_ltbl[NT_MAX + 1] = {
 	[NT_ACK ] = 0,
 	[NT_ERR ] = 0,
 	[NT_SALT] = 0,
 	[NT_STAT] = 8 + N_NAMESZ,
-	[NT_KEY ] = N_KEYSZ,
+	[NT_AUTH] = 16,
 };
 
 static uint32_t chktbl[256];
@@ -127,6 +127,7 @@ int pkgrecv(struct pbuf *pb, struct npkg *pkg, int fd)
 void pkginit(struct npkg *pkg, uint8_t type)
 {
 	assert(type <= NT_MAX);
+	memset(pkg, 0, sizeof *pkg);
 	pkg->type = type;
 	pkg->prot = 0;
 	pkg->length = htobe16(nt_ltbl[type] + N_HDRSZ);
