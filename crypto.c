@@ -58,7 +58,8 @@ int authrecv(struct sock *s)
 	crc = crc32(0, pass, sizeof pass);
 	dbgf("chksum = %" PRIX32 "\n", crc);
 	serpent_init(&ctx, pass, sizeof pass);
-	ctx_init = 1;
+	if (!(cfg.mode & MODE_UNSAFE))
+		ctx_init = 1;
 	if ((ret = sockrecv(s, &pkg)))
 		goto fail;
 	/* check whether login succeeded */
@@ -113,7 +114,8 @@ int authsend(struct sock *s)
 	crc = crc32(0, pass, sizeof pass);
 	dbgf("chksum = %" PRIX32 "\n", crc);
 	serpent_init(&ctx, pass, sizeof pass);
-	ctx_init = 1;
+	if (!(cfg.mode & MODE_UNSAFE))
+		ctx_init = 1;
 	pkginit(&pkg, NT_AUTH);
 	/* copy salt to encrypted block */
 	sp = pkg.data.auth.salt;

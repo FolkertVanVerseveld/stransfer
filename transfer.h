@@ -5,6 +5,7 @@
 
 #define MODE_SERVER  1
 #define MODE_CLIENT  2
+#define MODE_UNSAFE  4
 
 extern struct cfg {
 	uint16_t port;

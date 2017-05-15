@@ -12,6 +12,7 @@
 #include <inttypes.h>
 #include "fs.h"
 #include "net.h"
+#include "time.h"
 
 static int help = 0;
 struct cfg cfg = {
@@ -26,6 +27,7 @@ static const struct option long_opt[] = {
 	{"help", no_argument, 0, 'h'},
 	{"server", no_argument, 0, 's'},
 	{"client", no_argument, 0, 'c'},
+	{"unsafe", no_argument, 0, 'u'},
 	{"port", required_argument, 0, 'p'},
 	{"address", required_argument, 0, 'a'},
 	{"key", required_argument, 0, 'k'},
@@ -40,6 +42,7 @@ static void usage(FILE *stream)
 		"  -h  --help     This help\n"
 		"  -s  --server   Run in server mode\n"
 		"  -c  --client   Run in client mode\n"
+		"  -u  --unsafe   Drop encryption\n"
 		"  -p  --port     Network port to use\n"
 		"  -a  --address  Address to connect client to\n"
 		"  -k  --key      Password\n",
@@ -51,7 +54,7 @@ static int parse_opt(int argc, char **argv)
 {
 	int c, o_i;
 	while (1) {
-		c = getopt_long(argc, argv, "hscp:a:k:", long_opt, &o_i);
+		c = getopt_long(argc, argv, "hscup:a:k:", long_opt, &o_i);
 		if (c == -1) break;
 		switch (c) {
 		case 'h':
@@ -90,6 +93,9 @@ static int parse_opt(int argc, char **argv)
 			cfg.port = port;
 		}
 			break;
+		case 'u':
+			cfg.mode |= MODE_UNSAFE;
+			break;
 		case 'a':
 			cfg.address = optarg;
 			break;
@@ -106,6 +112,8 @@ static int sendfiles(struct sock *s)
 	struct npkg pkg;
 	struct bfile file;
 	int ret = 1;
+	struct eta timer;
+	memset(&timer, 0, sizeof timer);
 	binit(&file);
 	for (char **f = cfg.files; *f; ++f) {
 		bclose(&file);
@@ -125,12 +133,15 @@ static int sendfiles(struct sock *s)
 			fputs("File rejected\n", stderr);
 			continue;
 		}
-		uint64_t offset, max; uint16_t n;
-		for (offset = 0, max = file.size; offset < max; offset += N_FBLKSZ) {
+		uint64_t offset = 0, max = file.size; uint16_t n;
+		eta_init(&timer, offset, max);
+		pkginit(&pkg, NT_FBLK);
+		for (; offset < max; offset += N_FBLKSZ) {
 			n = N_FBLKSZ;
-			if (offset + n >= max)
+			if (offset + n >= max) {
 				n = max - offset;
-			pkginit(&pkg, NT_FBLK);
+				memset(pkg.data.fblk.data, 0, N_FBLKSZ);
+			}
 			pkg.data.fblk.offset = htobe64(offset);
 			pkg.data.fblk.size = htobe16(n);
 			memcpy(pkg.data.fblk.data, file.data + offset, n);
@@ -139,7 +150,9 @@ static int sendfiles(struct sock *s)
 				fputs("Transfer failed\n", stderr);
 				goto fail;
 			}
+			eta_step(&timer, n);
 		}
+		eta_done(&timer);
 		pkginit(&pkg, NT_ACK);
 		pkg.quick.ack = NA_FILE_DONE;
 		if ((ret = socksend(s, &pkg)))
@@ -160,6 +173,8 @@ static int recvfiles(struct sock *s)
 	struct npkg pkg;
 	struct bfile file;
 	int ret = 1;
+	struct eta timer;
+	memset(&timer, 0, sizeof timer);
 	binit(&file);
 	while (1) {
 		if ((ret = sockrecv(s, &pkg)))
@@ -186,12 +201,15 @@ static int recvfiles(struct sock *s)
 			pkg.quick.ack = NA_FILE;
 			if ((ret = socksend(s, &pkg)))
 				goto fail;
+			eta_init(&timer, 0, size);
 			while (1) {
 				if ((ret = sockrecv(s, &pkg)))
 					goto fail;
 				if (pkg.type == NT_ACK) {
-					if (pkg.quick.ack == NA_FILE_DONE)
+					if (pkg.quick.ack == NA_FILE_DONE) {
+						eta_done(&timer);
 						break;
+					}
 					fputs("Communication error\n", stderr);
 					ret = 1;
 					goto fail;
@@ -206,6 +224,7 @@ static int recvfiles(struct sock *s)
 						goto fail;
 					}
 					memcpy(file.data + offset, pkg.data.fblk.data, n);
+					eta_step(&timer, n);
 				}
 			}
 		}
