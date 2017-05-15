@@ -1,0 +1,4 @@
+The authentication process is easy, but effective. The server choses a random
+salt (the whole packet header) that both ends will use as an initialization
+vector for encrypting the password. The encrypted password will never be
+embedded in a packet (nor as a salt or hash).
