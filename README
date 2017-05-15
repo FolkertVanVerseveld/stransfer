@@ -1,0 +1,19 @@
+Secure file transfer program
+
+Copyright Folkert van Verseveld
+Licensed under Affero General Public License version 3.0
+
+Simple to use serpent encrypted file transferring program. Files can be sent
+from both ends. The maximum file size is theoretically 2^64-1, but most file
+systems do not support files of this size.
+
+You need a POSIX compliant system with bash and gcc to compile the program.
+Just run: ./configure_debug && make
+
+Note that the password is provided as an option which you can grab from the command history.
+The simplest way to prevent this is to start the command in a shell script and call the script.
+E.g.:
+$ cat test.sh
+#!/bin/sh
+./transfer -s -k test some_file
+$ ./test.sh
