@@ -14,6 +14,7 @@ const uint16_t nt_ltbl[NT_MAX + 1] = {
 	[NT_SALT] = 0,
 	[NT_STAT] = 8 + N_NAMESZ,
 	[NT_AUTH] = 16,
+	[NT_FBLK] = 16 + N_FBLKSZ,
 };
 
 static uint32_t chktbl[256];
@@ -66,14 +67,11 @@ ssize_t pkgread(struct pbuf *pb, int fd, void *buf, uint16_t n)
 	size_t need;
 	char *dst = buf;
 	if (pb->size) {
-		// TODO unit test this
 		uint16_t off;
-		// use remaining data
-		// if everything is buffered already
+		/* use remaining data if everything is buffered already */
 		if (pb->size >= n)
 			goto copy;
-		// we need to copy all buffered data and
-		// wait for the next stuff to arrive
+		/* we need to copy all buffered data and wait for the next stuff to arrive */
 		memcpy(buf, pb->data, off = pb->size);
 		pb->size = 0;
 		for (need = n - pb->size; need; need -= length, pb->size += length) {

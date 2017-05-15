@@ -4,11 +4,14 @@
  * Released under GNU Affero Public License version 3
  */
 
+#include "transfer.h"
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <inttypes.h>
+#include "fs.h"
 #include "net.h"
-#include "transfer.h"
 
 static int help = 0;
 struct cfg cfg = {
@@ -98,17 +101,139 @@ static int parse_opt(int argc, char **argv)
 	return o_i;
 }
 
+static int sendfiles(struct sock *s)
+{
+	struct npkg pkg;
+	struct bfile file;
+	int ret = 1;
+	binit(&file);
+	for (char **f = cfg.files; *f; ++f) {
+		bclose(&file);
+		if (bopen(&file, *f, BM_READ, 0)) {
+			fprintf(stderr, "Skipping \"%s\"\n", *f);
+			continue;
+		}
+		pkginit(&pkg, NT_STAT);
+		strcpy(pkg.data.stat.name, file.name);
+		pkg.data.stat.size = htobe64(file.size);
+		printf("Sending \"%s\"\n", file.name);
+		if ((ret = socksend(s, &pkg)))
+			goto fail;
+		if ((ret = sockrecv(s, &pkg)))
+			goto fail;
+		if (pkg.type != NT_ACK) {
+			fputs("File rejected\n", stderr);
+			continue;
+		}
+		uint64_t offset, max; uint16_t n;
+		for (offset = 0, max = file.size; offset < max; offset += N_FBLKSZ) {
+			n = N_FBLKSZ;
+			if (offset + n >= max)
+				n = max - offset;
+			pkginit(&pkg, NT_FBLK);
+			pkg.data.fblk.offset = htobe64(offset);
+			pkg.data.fblk.size = htobe16(n);
+			memcpy(pkg.data.fblk.data, file.data + offset, n);
+			//printf("block %" PRIX64 ", %" PRIu16 "\n", offset, n);
+			if ((ret = socksend(s, &pkg))) {
+				fputs("Transfer failed\n", stderr);
+				goto fail;
+			}
+		}
+		pkginit(&pkg, NT_ACK);
+		pkg.quick.ack = NA_FILE_DONE;
+		if ((ret = socksend(s, &pkg)))
+			goto fail;
+	}
+	pkginit(&pkg, NT_ACK);
+	pkg.quick.ack = NA_LIST_DONE;
+	if ((ret = socksend(s, &pkg)))
+		goto fail;
+	ret = 0;
+fail:
+	bclose(&file);
+	return ret;
+}
+
+static int recvfiles(struct sock *s)
+{
+	struct npkg pkg;
+	struct bfile file;
+	int ret = 1;
+	binit(&file);
+	while (1) {
+		if ((ret = sockrecv(s, &pkg)))
+			goto fail;
+		if (pkg.type == NT_ACK) {
+			if (pkg.quick.ack == NA_LIST_DONE)
+				break;
+			fputs("Communication error\n", stderr);
+			ret = 1;
+			goto fail;
+		} else if (pkg.type == NT_STAT) {
+			char *name = pkg.data.stat.name;
+			uint64_t size = be64toh(pkg.data.stat.size);
+			name[N_NAMESZ - 1] = '\0';
+			printf("Incoming file: \"%s\" (%" PRIu64 " bytes)\n", name, size);
+			if (bopen(&file, name, BM_WRITE, size)) {
+				pkginit(&pkg, NT_ERR);
+				pkg.quick.err = NE_FILE_SKIP;
+				if ((ret = socksend(s, &pkg)))
+					goto fail;
+				continue;
+			}
+			pkginit(&pkg, NT_ACK);
+			pkg.quick.ack = NA_FILE;
+			if ((ret = socksend(s, &pkg)))
+				goto fail;
+			while (1) {
+				if ((ret = sockrecv(s, &pkg)))
+					goto fail;
+				if (pkg.type == NT_ACK) {
+					if (pkg.quick.ack == NA_FILE_DONE)
+						break;
+					fputs("Communication error\n", stderr);
+					ret = 1;
+					goto fail;
+				} else if (pkg.type == NT_FBLK) {
+					uint64_t offset; uint16_t n;
+					offset = be64toh(pkg.data.fblk.offset);
+					n = be16toh(pkg.data.fblk.size);
+					//printf("block %" PRIX64 ", %" PRIu16 "\n", offset, n);
+					if (offset + n > size) {
+						fputs("Bad data block\n", stderr);
+						ret = 1;
+						goto fail;
+					}
+					memcpy(file.data + offset, pkg.data.fblk.data, n);
+				}
+			}
+		}
+	}
+	ret = 0;
+fail:
+	bclose(&file);
+	return ret;
+}
+
 static int handle(struct sock *s)
 {
 	int ret = 1;
 	if (cfg.mode & MODE_SERVER) {
 		if ((ret = authrecv(s)))
 			goto fail;
+		if ((ret = sendfiles(s)))
+			goto fail;
+		if ((ret = recvfiles(s)))
+			goto fail;
 	} else {
 		if ((ret = authsend(s)))
 			goto fail;
+		if ((ret = recvfiles(s)))
+			goto fail;
+		if ((ret = sendfiles(s)))
+			goto fail;
 	}
-	fputs("TODO handle\n", stderr);
 	ret = 0;
 fail:
 	return ret;

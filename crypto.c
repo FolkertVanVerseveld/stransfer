@@ -10,6 +10,14 @@
 #include <stdio.h>
 #include <inttypes.h>
 
+#ifdef AUTH_DEBUG
+#define dbgf(f, ...) printf(f, ## __VA_ARGS__)
+#define dbgs(s) puts(s)
+#else
+#define dbgf(f, ...) ((void)0)
+#define dbgs(s) ((void)0)
+#endif
+
 static int ctx_init = 0;
 static serpent_ctx ctx;
 
@@ -35,9 +43,9 @@ int authrecv(struct sock *s)
 	pkg.quick.salt[0] = htobe32(salt[0]);
 	pkg.quick.salt[1] = htobe32(salt[1]);
 	pkg.quick.salt[2] = htobe32(salt[2]);
-	printf("salt[0] = %" PRIX32 "\n", salt[0]);
-	printf("salt[1] = %" PRIX32 "\n", salt[1]);
-	printf("salt[2] = %" PRIX32 "\n", salt[2]);
+	dbgf("salt[0] = %" PRIX32 "\n", salt[0]);
+	dbgf("salt[1] = %" PRIX32 "\n", salt[1]);
+	dbgf("salt[2] = %" PRIX32 "\n", salt[2]);
 	if ((ret = socksend(s, &pkg)))
 		goto fail;
 	sp = (uint32_t*)pass;
@@ -45,10 +53,10 @@ int authrecv(struct sock *s)
 	sp[1] = salt[0];
 	sp[2] = salt[1];
 	sp[3] = (salt[2] & salt[1]) | salt[0];
-	printf("key = %s\n", cfg.key);
+	dbgf("key = %s\n", cfg.key);
 	strncpyz(pass + N_HDRSZ, cfg.key, N_KEYSZ);
 	crc = crc32(0, pass, sizeof pass);
-	printf("chksum = %" PRIX32 "\n", crc);
+	dbgf("chksum = %" PRIX32 "\n", crc);
 	serpent_init(&ctx, pass, sizeof pass);
 	ctx_init = 1;
 	if ((ret = sockrecv(s, &pkg)))
@@ -65,7 +73,6 @@ int authrecv(struct sock *s)
 	crc2 = be32toh(pkg.data.auth.crc);
 	if (salt2[0] != salt[0] || salt2[1] != salt[1] || salt2[2] != salt[2] || crc2 != crc) {
 		fputs("Authentication failure\n", stderr);
-		ret = 1;
 		goto fail;
 	}
 	/* acknowledge salt */
@@ -73,9 +80,9 @@ int authrecv(struct sock *s)
 	pkg.quick.ack = NA_SALT;
 	if ((ret = socksend(s, &pkg)))
 		goto fail;
-	ret = 0;
+	return 0;
 fail:
-	return ret;
+	return ret ? ret : 1;
 }
 
 int authsend(struct sock *s)
@@ -93,18 +100,18 @@ int authsend(struct sock *s)
 	salt[0] = be32toh(pkg.quick.salt[0]);
 	salt[1] = be32toh(pkg.quick.salt[1]);
 	salt[2] = be32toh(pkg.quick.salt[2]);
-	printf("salt[0] = %" PRIX32 "\n", salt[0]);
-	printf("salt[1] = %" PRIX32 "\n", salt[1]);
-	printf("salt[2] = %" PRIX32 "\n", salt[2]);
+	dbgf("salt[0] = %" PRIX32 "\n", salt[0]);
+	dbgf("salt[1] = %" PRIX32 "\n", salt[1]);
+	dbgf("salt[2] = %" PRIX32 "\n", salt[2]);
 	sp = (uint32_t*)pass;
 	sp[0] = salt[2];
 	sp[1] = salt[0];
 	sp[2] = salt[1];
 	sp[3] = (salt[2] & salt[1]) | salt[0];
-	printf("key = %s\n", cfg.key);
+	dbgf("key = %s\n", cfg.key);
 	strncpyz(pass + N_HDRSZ, cfg.key, N_KEYSZ);
 	crc = crc32(0, pass, sizeof pass);
-	printf("chksum = %" PRIX32 "\n", crc);
+	dbgf("chksum = %" PRIX32 "\n", crc);
 	serpent_init(&ctx, pass, sizeof pass);
 	ctx_init = 1;
 	pkginit(&pkg, NT_AUTH);
@@ -126,9 +133,9 @@ int authsend(struct sock *s)
 		fputs("Communication error\n", stderr);
 		goto fail;
 	}
-	ret = 0;
+	return 0;
 fail:
-	return ret;
+	return ret ? ret : 1;
 }
 
 int socksend(struct sock *s, struct npkg *pkg)
@@ -139,7 +146,7 @@ int socksend(struct sock *s, struct npkg *pkg)
 		memcpy(&pkg2, pkg, N_HDRSZ);
 		assert(pkg->type <= NT_MAX);
 		serpent_encblk(&ctx, (char*)pkg + N_HDRSZ, (char*)&pkg2 + N_HDRSZ, nt_ltbl[pkg->type]);
-		puts("encrypt");
+		dbgs("encrypt");
 		return pkgsend(&pkg2, s->other);
 	}
 	return pkgsend(pkg, s->other);
@@ -155,7 +162,7 @@ int sockrecv(struct sock *s, struct npkg *pkg)
 		memcpy(pkg, &pkg2, N_HDRSZ);
 		assert(pkg->type <= NT_MAX);
 		serpent_decblk(&ctx, (char*)&pkg2 + N_HDRSZ, (char*)pkg + N_HDRSZ, nt_ltbl[pkg2.type]);
-		puts("decrypt");
+		dbgs("decrypt");
 		return ret;
 	}
 	return pkgrecv(&s->pb, pkg, s->other);

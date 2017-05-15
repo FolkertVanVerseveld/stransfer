@@ -18,13 +18,20 @@
 #define NT_SALT 2
 #define NT_AUTH 3
 #define NT_STAT 4
-#define NT_MAX  4
+#define NT_FBLK 5
+#define NT_MAX  5
 
 #define N_HDRSZ  16
 #define N_KEYSZ  80
 #define N_NAMESZ 4088
+#define N_FBLKSZ 4096
 
 #define NA_SALT 1
+#define NA_FILE 2
+#define NA_FILE_DONE 3
+#define NA_LIST_DONE 4
+
+#define NE_FILE_SKIP 1
 
 struct npkg {
 	uint16_t length;
@@ -41,6 +48,12 @@ struct npkg {
 			uint64_t size;
 			char name[N_NAMESZ];
 		} stat;
+		struct {
+			uint64_t offset;
+			uint16_t size;
+			uint16_t pad[3];
+			char data[N_FBLKSZ];
+		} fblk;
 		struct {
 			uint32_t crc;
 			uint32_t salt[3];
