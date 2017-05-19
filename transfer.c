@@ -115,6 +115,8 @@ static int sendfiles(struct sock *s)
 	struct eta timer;
 	memset(&timer, 0, sizeof timer);
 	binit(&file);
+	if (!cfg.files)
+		goto done;
 	for (char **f = cfg.files; *f; ++f) {
 		bclose(&file);
 		if (bopen(&file, *f, BM_READ, 0)) {
@@ -158,6 +160,7 @@ static int sendfiles(struct sock *s)
 		if ((ret = socksend(s, &pkg)))
 			goto fail;
 	}
+done:
 	pkginit(&pkg, NT_ACK);
 	pkg.quick.ack = NA_LIST_DONE;
 	if ((ret = socksend(s, &pkg)))
