@@ -45,7 +45,6 @@ void eta_step(struct eta *e, uint64_t inc)
 	//printf("bdiff: %" PRIu64 "\n", bdiff);
 	streta(buf, sizeof buf, bdiff, &e->last, &e->now);
 	printf("\033[u%s (%.2f%%)\033[K", buf, 100.0 * perc);
-	fflush(stdout);
 	e->last = e->now;
 	e->index_old = e->index;
 }
@@ -62,5 +61,5 @@ void eta_done(struct eta *e)
 		snprintf(dbuf, sizeof dbuf, "%.2fsec", dt);
 	} else
 		snprintf(dbuf, sizeof dbuf, "%.2fmsec", diff.tv_nsec / 1000000.0f);
-	printf("\033[u%s in %s\n", buf, dbuf);
+	printf("\033[u%s in %s\033[K\n", buf, dbuf);
 }
