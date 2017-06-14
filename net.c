@@ -48,15 +48,19 @@ uint32_t crc32(uint32_t crc, const void *buf, size_t n)
 int pkgsend(struct npkg *pkg, int fd)
 {
 	uint16_t length;
-	ssize_t n;
+	ssize_t size;
+
 	assert(pkg->type <= NT_MAX);
+
 	length = nt_ltbl[pkg->type] + N_HDRSZ;
 	pkg->length = htobe16(length);
-	while (length) {
-		n = send(fd, pkg, length, 0);
-		if (!n) return NS_LEFT;
-		if (n < 0) return NS_ERR;
-		length -= n;
+
+	for (unsigned char *src = (unsigned char*)pkg; length; src += size, length -= size) {
+		size = send(fd, src, length, 0);
+		if (!size)
+			return NS_LEFT;
+		if (size < 0)
+			return NS_ERR;
 	}
 	return NS_OK;
 }
